@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "registry": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/home/sigma/Desktop/echo-lab/echo-sys/services/registry/runtime/mcp-server.mjs"
+      ],
+      "env": {
+        "X-API-Key": "sk-KNwG67uTQkn-QmnUOi-2NzPktmPypMgfFGg23uv0TRBbVW6k",
+        "CLI_BUNDLES_DIR": "/home/sigma/Desktop/echo-lab/echo-sys/cli-bundles",
+        "NODE_ENV": "production",
+        "NODE_NO_WARNINGS": "1"
+      }
+    }
+  }
+}

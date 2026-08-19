@@ -150,39 +150,35 @@ export class StreamableHttpPlugin implements ITransportPlugin {
     logger.debug('[StreamableHttpPlugin] Getting primitives...');
 
     try {
-      const capabilities = client.getServerCapabilities();
       const primitives: any[] = [];
       const promises: Promise<void>[] = [];
 
-      if (capabilities?.resources) {
-        promises.push(
-          client.listResources().then(({ resources }) => {
-            resources.forEach(item => primitives.push({ type: 'resource', value: item }));
-          }).catch(error => {
-            logger.warn('[StreamableHttpPlugin] Failed to list resources:', error);
-          }),
-        );
-      }
+      // Don't gate on getServerCapabilities() — some servers (e.g. mcpnyx-u) omit or
+      // under-report capabilities in their initialize response even when the
+      // corresponding list endpoints work fine. Try each unconditionally.
+      promises.push(
+        client.listResources().then(({ resources }) => {
+          resources.forEach(item => primitives.push({ type: 'resource', value: item }));
+        }).catch(error => {
+          logger.debug('[StreamableHttpPlugin] listResources unavailable:', error instanceof Error ? error.message : error);
+        }),
+      );
 
-      if (capabilities?.tools) {
-        promises.push(
-          client.listTools().then(({ tools }) => {
-            tools.forEach(item => primitives.push({ type: 'tool', value: item }));
-          }).catch(error => {
-            logger.warn('[StreamableHttpPlugin] Failed to list tools:', error);
-          }),
-        );
-      }
+      promises.push(
+        client.listTools().then(({ tools }) => {
+          tools.forEach(item => primitives.push({ type: 'tool', value: item }));
+        }).catch(error => {
+          logger.debug('[StreamableHttpPlugin] listTools unavailable:', error instanceof Error ? error.message : error);
+        }),
+      );
 
-      if (capabilities?.prompts) {
-        promises.push(
-          client.listPrompts().then(({ prompts }) => {
-            prompts.forEach(item => primitives.push({ type: 'prompt', value: item }));
-          }).catch(error => {
-            logger.warn('[StreamableHttpPlugin] Failed to list prompts:', error);
-          }),
-        );
-      }
+      promises.push(
+        client.listPrompts().then(({ prompts }) => {
+          prompts.forEach(item => primitives.push({ type: 'prompt', value: item }));
+        }).catch(error => {
+          logger.debug('[StreamableHttpPlugin] listPrompts unavailable:', error instanceof Error ? error.message : error);
+        }),
+      );
 
       await Promise.all(promises);
       logger.debug(`Retrieved ${primitives.length} primitives`);

@@ -1,0 +1,6 @@
+{
+  "name": "Aegis Identity Hub",
+  "description": "Aegis Identity Hub - Cross-Device Automation & Memory Extension",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

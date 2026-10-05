@@ -1,0 +1,11 @@
+dist
+node_modules
+.deprecated
+.gitignore
+.github
+.husky
+.nvmrc
+.prettierignore
+LICENSE
+*.md
+pnpm-lock.yaml

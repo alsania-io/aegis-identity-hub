@@ -1,0 +1,6 @@
+Learnings from session:
+- Removed invalid "ignoreDeprecations" from packages/tsconfig/base.json to fix TS5103 errors.
+- Build now proceeds with pnpm build after fixing tsconfig.
+- Project uses TypeScript 5.8.1-rc, React 19, Vite, turbo monorepo.
+- Postinstall script runs eslint build and copies env; ensure tsconfig is valid before running.
+- Ensure all render_prescript files are syntax‑correct before final build.

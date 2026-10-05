@@ -1,0 +1,132 @@
+/* Mobile Sidebar Styles - Touch Optimized */
+
+/* Increase touch targets for all interactive elements */
+.mobile-sidebar button,
+.mobile-sidebar .touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+
+/* Larger tap targets for tool items */
+.mobile-sidebar .tool-item {
+  padding: 12px 14px;
+  min-height: 52px;
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+
+.mobile-sidebar .tool-item:active {
+  background: rgba(99, 102, 241, 0.1);
+  transform: scale(0.98);
+}
+
+/* Bottom navigation style tabs */
+.mobile-sidebar .tab-button {
+  padding: 12px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  min-height: 48px;
+  flex: 1;
+  text-align: center;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-sidebar .tab-button:active {
+  opacity: 0.7;
+}
+
+.mobile-sidebar .tab-button.active {
+  border-bottom-color: #6366f1;
+  color: #6366f1;
+}
+
+.mobile-sidebar .tab-button.active.dark {
+  border-bottom-color: #818cf8;
+  color: #818cf8;
+}
+
+/* Smooth scrolling for content */
+.mobile-sidebar .scroll-content {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Swipe indicator */
+.mobile-sidebar .swipe-indicator {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* Floating action button pulse animation */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(99, 102, 241, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+}
+
+.mobile-sidebar .fab-button {
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+
+/* Overlay backdrop blur */
+.mobile-sidebar .overlay {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* Dark mode overrides for mobile */
+@media (prefers-color-scheme: dark) {
+  .mobile-sidebar .tool-item:active {
+    background: rgba(99, 102, 241, 0.2);
+  }
+}
+
+/* Safe area support for notched phones */
+@supports (padding: max(0px)) {
+  .mobile-sidebar .safe-top {
+    padding-top: max(env(safe-area-inset-top), 16px);
+  }
+  .mobile-sidebar .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+  }
+}
+
+/* Prevent zoom on double tap */
+.mobile-sidebar {
+  touch-action: manipulation;
+}
+
+/* Larger scrollbar track for touch */
+.mobile-sidebar ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mobile-sidebar ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mobile-sidebar ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+}
+
+.mobile-sidebar ::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}

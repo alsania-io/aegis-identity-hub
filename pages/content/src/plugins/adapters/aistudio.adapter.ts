@@ -1814,20 +1814,29 @@ export const submitChatInput = (maxWaitTime = 5000): Promise<boolean> => {
         return;
       }
 
-      // Define a function to find the submit button
+      // Define a function to find the submit button.
+      // AI Studio's Run button (Jan 2026 DOM):
+      //   <button ms-button jslog="225921;..." aria-disabled="false">
+      //     <span class="run-button-label"> Run </span>
+      //     <span class="material-symbols-outlined">keyboard_return</span>
+      //   </button>
+      // NO aria-label, NO type=submit -> match the .run-button-label span,
+      // then ms-button/jslog, then a loose text check. The old generic
+      // fallbacks (parentElement button / svg[stroke]) matched arbitrary
+      // buttons and were the cause of 'wrong button' clicks.
       const findSubmitButton = (): HTMLButtonElement | null => {
+        const runLabel = document.querySelector('.run-button-label');
         const submitButton =
+          (runLabel?.closest('button') as HTMLButtonElement | null) ||
+          (document.querySelector('ms-button[jslog*="225921"]') as HTMLButtonElement | null) ||
+          (document.querySelector('button[jslog*="225921"]') as HTMLButtonElement | null) ||
+          (document.querySelector('ms-run-button') as HTMLButtonElement | null) ||
           document.querySelector('button[aria-label="Run"]') ||
           document.querySelector('button[aria-label*="Run" i]') ||
-          document.querySelector('button[data-testid="run-button"]') ||
-          document.querySelector('button.run-button') ||
-          document.querySelector('button[aria-label="Submit"]') ||
-          document.querySelector('button[aria-label="Send"]') ||
-          document.querySelector('button[type="submit"]') ||
-          // Look for a button next to the textarea
-          chatInput.parentElement?.querySelector('button') ||
-          // Common pattern: button with paper plane or play icon
-          document.querySelector('button svg[stroke="currentColor"]')?.closest('button');
+          (() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            return btns.find(b => /^\s*Run\b/i.test(b.textContent || '')) || null;
+          })();
 
         return submitButton as HTMLButtonElement | null;
       };

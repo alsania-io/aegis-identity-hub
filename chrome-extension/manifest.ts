@@ -32,6 +32,7 @@ const manifest = {
     '*://*.t3.chat/*',
     '*://*.chat.mistral.ai/*',
     '*://*.github.com/*',
+    '*://*.copilot.com/*',
     '*://*.copilot.github.com/*',
     '*://*.copilot.microsoft.com/*',
     '*://*.claude.ai/*',
@@ -54,8 +55,8 @@ const manifest = {
     16: 'icon-16.png',
     34: 'icon-34.png',
     48: 'icon-48.png',
-    128: 'icon-128.png',
-    900: 'icon-900.png'
+    64: 'icon-64.png',
+    128: 'icon-128.png'
   },
   content_scripts: [
     {
@@ -77,6 +78,7 @@ const manifest = {
         '*://*.github.com/*',
         '*://*.copilot.github.com/*',
         '*://*.copilot.microsoft.com/*',
+        '*://*.copilot.com/*',
         '*://*.claude.ai/*',
         '*://*.kimi.com/*',
         '*://*.chat.z.ai/*',
@@ -105,15 +107,13 @@ const manifest = {
         '*.css',
         'content/*.css',
         'content/*.svg',
-        'popup/*.css',
-        'icon-128.png',
+        'icon-16.png',
         'icon-34.png',
         'icon-48.png',
-        'icon-900.png',
-        'icon-16.png',
+        'icon-64.png',
+        'icon-128.png',
         'favicon.ico',
-        '*.png',
-        'addons/*.js'
+        '*.png'
       ],
       matches: ['*://*/*', '<all_urls>']
     }

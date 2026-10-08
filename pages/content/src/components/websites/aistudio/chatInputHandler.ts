@@ -229,16 +229,34 @@ export const submitChatInput = (maxWaitTime = 5000): Promise<boolean> => {
         return;
       }
 
-      // Define a function to find the submit button
+      // Define a function to find the submit button.
+      // AI Studio's submit control is labeled "Run" (not "Submit"/"Send").
+      // The old generic fallbacks (parentElement.querySelector('button'),
+      // svg[stroke=currentColor]) matched arbitrary buttons near the composer
+      // — after a result rendered this clicked the WRONG button. Target "Run"
+      // explicitly; if not found, return null so the Enter-key path runs.
       const findSubmitButton = (): HTMLButtonElement | null => {
+        // AI Studio's Run button (Jan 2026 DOM):
+        //   <button ms-button jslog="225921;..." aria-disabled="false">
+        //     <span class="run-button-label"> Run </span>
+        //     <span class="material-symbols-outlined">keyboard_return</span>
+        //   </button>
+        // It has NO aria-label and NO type=submit, so label/attr selectors miss.
+        // Match on the run-button-label span, then walk up to the button;
+        // fall back to ms-button + jslog, then a loose text check.
+        const runLabel = document.querySelector('.run-button-label');
         const submitButton =
-          document.querySelector('button[aria-label="Submit"]') ||
-          document.querySelector('button[aria-label="Send"]') ||
-          document.querySelector('button[type="submit"]') ||
-          // Look for a button next to the textarea
-          chatInput.parentElement?.querySelector('button') ||
-          // Common pattern: button with paper plane icon
-          document.querySelector('button svg[stroke="currentColor"]')?.closest('button');
+          (runLabel?.closest('button') as HTMLButtonElement | null) ||
+          (document.querySelector('ms-button[jslog*="225921"]') as HTMLButtonElement | null) ||
+          (document.querySelector('button[jslog*="225921"]') as HTMLButtonElement | null) ||
+          (document.querySelector('ms-run-button') as HTMLButtonElement | null) ||
+          document.querySelector('button[aria-label="Run"]') ||
+          (() => {
+            // Last resort: a button whose text STARTS with "Run" (allow trailing
+            // icon glyph text like "keyboard_return").
+            const btns = Array.from(document.querySelectorAll('button'));
+            return btns.find(b => /^\s*Run\b/i.test(b.textContent || '')) || null;
+          })();
 
         return submitButton as HTMLButtonElement | null;
       };

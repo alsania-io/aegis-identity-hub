@@ -12,7 +12,7 @@ const logger = createLogger('CopilotAdapter');
 export class CopilotAdapter extends BaseAdapterPlugin {
   readonly name = 'CopilotAdapter';
   readonly version = '3.1.0'; // Merged: robust send-button finder + working auto-submit (replaces copilot.adapter addon)
-  readonly hostnames = ['copilot.microsoft.com', 'bing.com'];
+  readonly hostnames = ['copilot.com', 'copilot.microsoft.com', 'bing.com'];
   readonly capabilities: AdapterCapability[] = [
     'text-insertion',
     'form-submission',
@@ -350,7 +350,9 @@ export class CopilotAdapter extends BaseAdapterPlugin {
 
   isSupported(): boolean {
     const currentHost = window.location.hostname;
-    return currentHost.includes('copilot.microsoft.com');
+    // Microsoft Copilot now lives at copilot.com (moved from copilot.microsoft.com).
+    // Match any declared hostname so the MCP button injects on the new domain.
+    return this.hostnames.some(h => currentHost.includes(h));
   }
 
   supportsFileUpload(): boolean {
@@ -521,8 +523,36 @@ export class CopilotAdapter extends BaseAdapterPlugin {
 
   private findButtonInsertionPoint(): { container: Element; insertAfter: Element | null } | null {
     this.context.logger.debug('Finding button insertion point for Copilot');
-    
-    // Try to find the compose box container
+
+    // --- NEW copilot.com DOM (Jan 2026): Lexical composer, "fai-BebopLite" classes ---
+    // The composer is .fai-BebopLiteChatInput__inputWrapper; the action area is
+    // .fai-BebopLiteChatInput__actions (right side) — a natural place for the button.
+    const actionsArea = document.querySelector('.fai-BebopLiteChatInput__actions');
+    if (actionsArea && actionsArea.parentElement) {
+      return { container: actionsArea.parentElement, insertAfter: actionsArea };
+    }
+    const bebopWrapper = document.querySelector('.fai-BebopLiteChatInput__inputWrapper');
+    if (bebopWrapper) {
+      // Insert after the contentBefore block (which holds the Plus button) if present
+      const contentBefore = bebopWrapper.querySelector('.fai-BebopLiteChatInput__contentBefore');
+      if (contentBefore) {
+        return { container: bebopWrapper, insertAfter: contentBefore };
+      }
+      return { container: bebopWrapper, insertAfter: null };
+    }
+    // Generic Lexical editor hook (belt and suspenders)
+    const lexicalInput = document.querySelector('[data-lexical-editor="true"], #m365-chat-editor-target-element');
+    if (lexicalInput) {
+      let wrap: Element | null = lexicalInput;
+      for (let i = 0; i < 6 && wrap && wrap !== document.body; i++) {
+        wrap = wrap.parentElement;
+        if (wrap && (wrap.querySelector('button') || wrap.className?.toString().includes('ChatInput'))) {
+          return { container: wrap, insertAfter: null };
+        }
+      }
+    }
+
+    // --- LEGACY copilot.microsoft.com DOM (cib-* web components) ---
     const composeBox = document.querySelector('cib-compose, .compose-box, [role="composeregion"]');
     if (composeBox) {
       const actionsContainer = composeBox.querySelector('.compose-actions, cib-action-bar, [class*="action-bar"]');
@@ -536,7 +566,7 @@ export class CopilotAdapter extends BaseAdapterPlugin {
       return { container: composeBox, insertAfter: null };
     }
 
-    // Fallback: Look for any button container near textarea
+    // Fallback: any button container near a textarea (legacy)
     const textarea = document.querySelector('textarea[cib-control], textarea[placeholder*="Ask"]');
     if (textarea && textarea.parentElement) {
       return { container: textarea.parentElement, insertAfter: null };

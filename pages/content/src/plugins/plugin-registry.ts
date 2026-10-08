@@ -843,12 +843,15 @@ class PluginRegistry {
         },
       });
 
-      // Register CopilotAdapter factory for copilot.microsoft.com
+      // Register CopilotAdapter factory for Microsoft Copilot.
+      // NOTE: site moved to copilot.com (from copilot.microsoft.com); the new
+      // domain MUST be listed here or the factory never matches and the adapter
+      // never loads -> no MCP button.
       this.registerAdapterFactory({
         name: 'copilot-adapter',
         version: '3.1.0',
         type: 'website-adapter',
-        hostnames: ['copilot.microsoft.com', 'bing.com'],
+        hostnames: ['copilot.com', 'copilot.microsoft.com', 'bing.com'],
         capabilities: ['text-insertion', 'form-submission', 'file-attachment'],
         create: () => new CopilotAdapter(),
         config: {

@@ -80,6 +80,18 @@ export const SwarmTab: React.FC<SwarmTabProps> = ({
   const defaultCronModel =
     modelAssignments?.cronTasksDefaultModel || (models.length > 0 ? models[0].id : 'kilo/kilo-coder-pro');
 
+  // Browser-model options: route a task to a live browser tab (any site),
+  // read the reply cross-tab. These are `tab/<site>` model ids.
+  const browserModelOptions: AiModelItem[] = [
+    { id: 'tab/deepseek', name: 'DeepSeek (browser tab)', rawId: 'tab/deepseek', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
+    { id: 'tab/claude', name: 'Claude (browser tab)', rawId: 'tab/claude', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
+    { id: 'tab/chatgpt', name: 'ChatGPT (browser tab)', rawId: 'tab/chatgpt', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
+    { id: 'tab/gemini', name: 'Gemini (browser tab)', rawId: 'tab/gemini', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
+    { id: 'tab/kimi', name: 'Kimi (browser tab)', rawId: 'tab/kimi', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
+    { id: 'tab/qwen', name: 'Qwen (browser tab)', rawId: 'tab/qwen', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
+  ];
+  const workerModelOptions: AiModelItem[] = [...browserModelOptions, ...(models || [])];
+
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [dispatchMode, setDispatchMode] = useState<'immediate' | 'cron'>('immediate');
@@ -132,10 +144,11 @@ export const SwarmTab: React.FC<SwarmTabProps> = ({
         setToast(`⚡ Cron: "${task.title}"`);
         setTimeout(() => setToast(null), 3000);
         try {
+          const cronWorkerModel = taskModel || task.model || defaultWorkerModel;
           const result = await swarmService.run({
             goal: task.description ?? task.title,
-            workerModel: task.model ?? defaultWorkerModel,
-            orchestratorModel: config.orchestratorModel || modelAssignments?.swarmOrchestratorModel || task.model || defaultWorkerModel,
+            workerModel: cronWorkerModel,
+            orchestratorModel: config.orchestratorModel || modelAssignments?.swarmOrchestratorModel || cronWorkerModel,
             maxConcurrent: config.maxConcurrent || 3,
           });
           onUpdateTasks(tasks.map(t => t.id === task.id
@@ -195,10 +208,13 @@ export const SwarmTab: React.FC<SwarmTabProps> = ({
     setTask({ executionLog: logs });
 
     try {
+      // Use the CURRENT dropdown selection at run time (not the model frozen
+      // into the task at creation), so changing the worker model works.
+      const runWorkerModel = taskModel || task.model || defaultWorkerModel;
       const result = await swarmService.run({
         goal: task.description ?? task.title,
-        workerModel: task.model ?? defaultWorkerModel,
-        orchestratorModel: config.orchestratorModel || modelAssignments?.swarmOrchestratorModel || task.model || defaultWorkerModel,
+        workerModel: runWorkerModel,
+        orchestratorModel: config.orchestratorModel || modelAssignments?.swarmOrchestratorModel || runWorkerModel,
         maxConcurrent: config.maxConcurrent || 3,
         onProgress: (ev) => {
           logs.unshift({
@@ -334,7 +350,7 @@ export const SwarmTab: React.FC<SwarmTabProps> = ({
               <SearchableModelSelect
                 value={config.orchestratorModel || modelAssignments?.swarmOrchestratorModel || ''}
                 onChange={(val) => onUpdateConfig({ ...config, orchestratorModel: val })}
-                models={models}
+                models={workerModelOptions}
                 placeholder={`Default (${modelAssignments?.swarmOrchestratorModel || 'Not assigned'})`}
               />
             </div>
@@ -393,7 +409,7 @@ export const SwarmTab: React.FC<SwarmTabProps> = ({
           <SearchableModelSelect
             value={taskModel}
             onChange={(val) => setTaskModel(val)}
-            models={models}
+            models={workerModelOptions}
             placeholder="Search and select task execution model..."
           />
         </div>

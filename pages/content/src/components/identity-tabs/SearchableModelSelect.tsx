@@ -102,18 +102,27 @@ export const SearchableModelSelect: React.FC<SearchableModelSelectProps> = ({
     });
   }, [allModels, search, selectedProvider]);
 
-  // Close dropdown on click outside
+  // Close dropdown on click outside.
+  // NOTE: the hub renders inside a Shadow DOM (#mcp-sidebar-shadow-host), so
+  // `contains(e.target)` is unreliable — events retarget to the shadow HOST as
+  // they cross the boundary, making the host appear "outside" dropdownRef even
+  // when the click originated inside it. composedPath() sees through the
+  // boundary and reports the true original target chain.
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+      const inside = path.length
+        ? path.includes(dropdownRef.current as EventTarget)
+        : !!dropdownRef.current && dropdownRef.current.contains(e.target as Node);
+      if (!inside) {
         setIsOpen(false);
       }
     };
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('mousedown', handleClickOutside, true);
     }
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, [isOpen]);
 
@@ -292,7 +301,15 @@ export const SearchableModelSelect: React.FC<SearchableModelSelectProps> = ({
                   <button
                     type="button"
                     key={m.id}
-                    onClick={() => handleSelect(m.id)}
+                    onMouseDown={(e) => {
+                      // Commit on mousedown: the document-level click-outside
+                      // listener also runs on mousedown, and across the Shadow
+                      // DOM boundary it may close the menu before a 'click'
+                      // ever fires. stopPropagation keeps this selection from
+                      // also being seen as an outside-click by host handlers.
+                      e.stopPropagation();
+                      handleSelect(m.id);
+                    }}
                     className={`w-full text-left p-2 rounded-xl transition-all flex items-center justify-between gap-3 group ${
                       isSelected
                         ? 'bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30'

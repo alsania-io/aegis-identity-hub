@@ -54,19 +54,26 @@ export function checkAgentIntegrity(
     weight: 20,
   });
 
-  // 2) System prompt present and on-doctrine
-  const prompt = (agent.systemPrompt || '').toLowerCase();
-  const hasMarker = REQUIRED_PROMPT_MARKERS.some((m) => prompt.includes(m));
+  // 2) System prompt present and role-specific.
+  // Accept EITHER a doctrine marker OR a substantial, role-specific prompt.
+  // The real risk is an empty/vague prompt (hallucinated authority, silent
+  // resets) — NOT a functional agent that simply doesn't say "sovereign".
+  const prompt = (agent.systemPrompt || '').trim();
+  const promptLower = prompt.toLowerCase();
+  const hasMarker = REQUIRED_PROMPT_MARKERS.some((m) => promptLower.includes(m));
+  const isSubstantial = prompt.length >= 40;
   checks.push({
     id: 'prompt',
-    label: 'System prompt on-doctrine',
-    passed: prompt.length >= 20 && hasMarker,
+    label: 'System prompt is role-specific',
+    passed: hasMarker || isSubstantial,
     detail:
-      prompt.length < 20
-        ? 'System prompt missing or too short'
-        : !hasMarker
-          ? 'Prompt lacks Alsania/sovereign doctrine marker'
-          : 'Prompt present and aligned',
+      prompt.length === 0
+        ? 'System prompt missing (hallucinated-authority risk)'
+        : hasMarker
+          ? 'Prompt present and on-doctrine'
+          : isSubstantial
+            ? 'Prompt present and role-specific'
+            : 'Prompt too short/vague to anchor identity',
     weight: 25,
   });
 

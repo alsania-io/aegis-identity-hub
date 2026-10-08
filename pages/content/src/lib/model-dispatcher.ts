@@ -8,6 +8,7 @@ import {
 } from '../types/identity';
 import { useAdapterStore } from '../stores/adapter.store';
 import { eventBus } from '../events/event-bus';
+import { executeInTab, hostFromTabModel } from './cross-tab-client';
 import { createLogger } from '@extension/shared/lib/logger';
 
 const logger = createLogger('ModelDispatcher');
@@ -45,6 +46,8 @@ export interface ModelDispatchRequest {
   temperature?: number;
   maxTokens?: number;
   autoSubmitTab?: boolean; // Default true when tab is chosen
+  /** timeout for cross-tab reply capture (ms), default 120000 */
+  timeoutMs?: number;
 }
 
 export interface ModelDispatchResponse {
@@ -270,12 +273,37 @@ export async function dispatchToActiveTab(
     try {
       const plugin = activeAdapterReg.plugin;
       if (typeof plugin.insertText === 'function') {
+        // Baseline: count assistant messages BEFORE we send, so readResponse
+        // can detect the NEW reply that belongs to this prompt.
+        const anyPlugin = plugin as any;
+        const baselineCount =
+          typeof anyPlugin.countAssistantMessages === 'function'
+            ? anyPlugin.countAssistantMessages()
+            : 0;
+
         const insertOk = await plugin.insertText(formattedPrompt);
         if (insertOk) {
           if (autoSubmit && typeof plugin.submitForm === 'function') {
             await new Promise(r => setTimeout(r, 150));
             await plugin.submitForm();
           }
+
+          // If the adapter supports reading the reply, wait for it and return it.
+          if (typeof anyPlugin.readResponse === 'function') {
+            const resp = await anyPlugin.readResponse({ baselineCount });
+            eventBus.emit('agent:dispatched-to-tab', {
+              target: plugin.name,
+              promptLength: formattedPrompt.length,
+              submitted: autoSubmit,
+            });
+            return {
+              success: true,
+              message: resp?.success ? resp.text : `Dispatched to ${plugin.name} (no reply captured)`,
+              target: plugin.name,
+            };
+          }
+
+          // Adapter has no response capture — legacy submit-only behaviour.
           eventBus.emit('agent:dispatched-to-tab', {
             target: plugin.name,
             promptLength: formattedPrompt.length,
@@ -743,6 +771,18 @@ export async function routeAndDispatch(
     error,
     fallbackTriggered,
   });
+
+  // CASE 0: Specific browser tab requested — tab/<site> (cross-tab execution).
+  // Drives a NAMED site's tab (find or create), reads the reply. This is the
+  // keystone: browser models as any slot, and correct cross-tab capture.
+  const namedHost = hostFromTabModel(modelId);
+  if (namedHost) {
+    const xt = await executeInTab(namedHost, request.prompt, { timeoutMs: request.timeoutMs });
+    if (xt.success) {
+      return finish(true, 'tab', namedHost, xt.text ?? '');
+    }
+    return finish(false, 'tab', namedHost, '', xt.error ?? 'cross-tab dispatch failed');
+  }
 
   // CASE 1: Tab Route explicitly requested OR model starts with 'tab/'
   if (routeTarget === 'tab' || modelId.startsWith('tab/') || modelId.startsWith('tab:')) {

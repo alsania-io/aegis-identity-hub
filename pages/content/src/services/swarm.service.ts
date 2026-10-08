@@ -10,6 +10,7 @@
  */
 
 import { mcpClient } from '../core/mcp-client';
+import { routeAndDispatch } from '../lib/model-dispatcher';
 
 export interface SubTask {
   id: string;
@@ -198,13 +199,16 @@ async function runSubtask(
 
   for (let attempt = 1; attempt <= RETRY_COUNT; attempt++) {
     try {
-      const output = await mcpClient.callTool('chat', {
-        model: subtask.model,
-        messages: [
-          { role: 'system', content: `You are a specialized ${subtask.taskType} agent. Be precise, concise, high quality.` },
-          { role: 'user', content: subtask.description },
-        ],
-      });
+      // Route by model prefix: 'tab/<site>' -> browser tab, 'openrouter/...' ->
+      // cloud API, 'local/...' -> Ollama/LM Studio. 'auto' lets the router pick.
+      const call = await routeAndDispatch({
+        prompt: subtask.description,
+        systemPrompt: `You are a specialized ${subtask.taskType} agent. Be precise, concise, high quality.`,
+        targetRoute: 'auto',
+        modelId: subtask.model,
+      } as any);
+      if (!call.success) throw new Error(call.error || 'dispatch failed');
+      const output = call.output;
 
       const result: SubTaskResult = {
         id: subtask.id,
@@ -289,11 +293,14 @@ async function aggregate(
     `GOAL: ${goal}\n\nRESULTS:\n${parts}`;
 
   try {
-    const out = await mcpClient.callTool('chat', {
-      model: orchestratorModel,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    return normalizeToolOutput(out);
+    const call = await routeAndDispatch({
+      prompt,
+      systemPrompt: 'You are a synthesis expert. Merge the agent results into one coherent answer.',
+      targetRoute: 'auto',
+      modelId: orchestratorModel,
+    } as any);
+    if (!call.success) return concatenate(successful);
+    return call.output;
   } catch {
     return concatenate(successful);
   }
@@ -342,7 +349,13 @@ export class SwarmService {
 
     for (const phase of plan) {
       onProgress({ phase: 'execute', message: `Executing ${phase.length} agents…` });
-      const phaseResults = await Promise.all(phase.map((s) => runSubtask(s, onProgress)));
+      // SEQUENTIAL: the tab route drives ONE host chat at a time. Running
+      // subtasks in parallel would interleave prompts in the same conversation
+      // and corrupt the responses. One subtask -> one prompt -> one reply.
+      const phaseResults: SubTaskResult[] = [];
+      for (const s of phase) {
+        phaseResults.push(await runSubtask(s, onProgress));
+      }
       allResults.push(...phaseResults);
 
       const anyBlockingFail = phaseResults.some(

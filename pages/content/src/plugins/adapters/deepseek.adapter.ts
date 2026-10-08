@@ -428,6 +428,61 @@ export class DeepSeekAdapter extends BaseAdapterPlugin {
   }
 
   /**
+   * Read the latest assistant response from the DOM.
+   * Waits for a new assistant message to appear and for its text to stabilise
+   * (streaming finished), then returns the text.
+   *
+   * DeepSeek renders assistant replies in `.ds-assistant-message-main-content`.
+   * We capture how many exist BEFORE submit, then wait for one MORE to appear.
+   */
+  async readResponse(options?: {
+    timeoutMs?: number;
+    /** number of assistant messages already present before submitting */
+    baselineCount?: number;
+    pollMs?: number;
+  }): Promise<{ success: boolean; text: string; error?: string }> {
+    const timeoutMs = options?.timeoutMs ?? 120000;
+    const pollMs = options?.pollMs ?? 500;
+    const start = Date.now();
+
+    const SELECTOR = '.ds-assistant-message-main-content';
+    const baseline = options?.baselineCount ?? this.countAssistantMessages();
+
+    let lastText = '';
+    let stableTicks = 0;
+
+    while (Date.now() - start < timeoutMs) {
+      const nodes = document.querySelectorAll<HTMLElement>(SELECTOR);
+      // Wait until a NEW assistant message appears beyond the baseline.
+      if (nodes.length > baseline) {
+        const latest = nodes[nodes.length - 1];
+        const text = (latest.innerText || latest.textContent || '').trim();
+        if (text && text === lastText) {
+          stableTicks++;
+          // stable for ~2 polls => streaming done
+          if (stableTicks >= 2) {
+            this.context.logger.debug(`readResponse: captured ${text.length} chars`);
+            return { success: true, text };
+          }
+        } else {
+          lastText = text;
+          stableTicks = 0;
+        }
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+
+    // Timeout — return whatever we last saw, if anything.
+    if (lastText) return { success: true, text: lastText };
+    return { success: false, text: '', error: 'readResponse: timed out waiting for assistant reply' };
+  }
+
+  /** Count assistant message nodes currently in the DOM. */
+  countAssistantMessages(): number {
+    return document.querySelectorAll('.ds-assistant-message-main-content').length;
+  }
+
+  /**
    * Robustly locate DeepSeek's send button by walking up the DOM from the
    * chat input to its toolbar container. Ported from the legacy
    * `content_targeted.js` addon. Selector-only lookup is unreliable because

@@ -1,6 +1,35 @@
 import 'webextension-polyfill';
 import { exampleThemeStorage } from '@extension/storage';
 import { RemoteConfigManager } from './remote-config-manager';
+import { handleCrossTabMessage } from './cross-tab';
+
+// Debug hook (MV3-safe): run from the service-worker console:
+//   __aegisTestCrossTab('claude.ai', 'Say: HELLO')
+// Does start -> poll loop OUTSIDE the worker's long-await path by calling
+// handleCrossTabMessage twice per iteration (each a short op).
+(globalThis as any).__aegisTestCrossTab = async (host: string, prompt: string) => {
+  const call = (m: any) => new Promise((res) => handleCrossTabMessage(m, res));
+  const started: any = await call({ type: 'cross-tab:start', host, prompt });
+  if (!started?.success) return started;
+  const tabId = started.tabId;
+  const baseline = started.baseline ?? 0;
+  const start = Date.now();
+  let last = '';
+  let stable = 0;
+  while (Date.now() - start < 120000) {
+    await new Promise((r) => setTimeout(r, 700));
+    const p: any = await call({ type: 'cross-tab:poll', tabId, baseline });
+    if (p?.success && p.text) {
+      if (p.text === last) {
+        if (++stable >= 2) return { success: true, text: p.text, target: host, tabId };
+      } else {
+        last = p.text;
+        stable = 0;
+      }
+    }
+  }
+  return last ? { success: true, text: last, target: host, tabId } : { success: false, error: 'timeout', tabId };
+};
 import {
   runWithBackwardsCompatibility,
   isMcpServerConnected,
@@ -663,6 +692,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (typeof message.type === 'string' && message.type.startsWith('remote-config:')) {
     // Handle Remote Config messages asynchronously
     handleRemoteConfigMessage(message, sender, sendResponse);
+    return true; // Keep channel open for async response
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Cross-tab execution (swarm: drive another tab's browser model)      */
+  /* ------------------------------------------------------------------ */
+  if (typeof message.type === 'string' && message.type.startsWith('cross-tab:')) {
+    handleCrossTabMessage(message, sendResponse);
     return true; // Keep channel open for async response
   }
 

@@ -1,162 +1,49 @@
-# Nyx Mobile
+# Aegis Identity Hub
 
-## Mobile Browser Extension for AI Automation
+> Cross-device automation & memory extension. Agent / identity / memory context for browser-based AI — by Alsania I/O.
 
-Nyx Mobile is a mobile-optimized version of the Nyx Control browser extension, designed for Firefox Mobile and other mobile browsers that support extensions. It provides the same powerful AI automation capabilities with a touch-friendly interface.
+Aegis Identity Hub connects free browser-based AI models to MCP server tools, and adds agent identity, persistent memory, skills, and workspace features on top. It is the fully-featured, mobile-friendly successor to Nyx Control / Nyx Mobile, built modular with a plugin architecture so features can be tested, maintained, added, or removed cleanly.
 
-## Features
+For the project intent and priorities, see [`GOAL.md`](./GOAL.md).
 
-### Mobile-Optimized UI
-- **Touch-friendly interface** with 44px+ touch targets
-- **Slide-out sidebar** with smooth animations
-- **Floating action button** for quick access
-- **Bottom navigation** for easy tab switching
-- **Swipe to close** support
-- **Safe area support** for notched phones
+## What it does
 
-### Same Powerful Backend
-- Full MCP (Model Context Protocol) support
-- All AI platform integrations (ChatGPT, Claude, Gemini, etc.)
-- Tool execution and automation
-- Persistent memory and context
-- Push content mode
-- All existing features work exactly as before
+- **Connect AI models to MCP tools** — drive browser chat UIs (DeepSeek, Claude, ChatGPT, Gemini, Copilot, and more) as tool-capable agents via the Model Context Protocol.
+- **Agent identity** — personality / identity initialization, integrity auditing.
+- **Persistent memory** — storage, retrieval, migration, and context management tuned for token efficiency.
+- **Skills & plugins** — modular, testable feature units.
+- **Swarm orchestration** — a symmetric model router where leader, workers, and aggregator are each independently routed to a browser tab (`tab/<site>`), a cloud API (`openrouter/...`), or a local engine (`local/...`).
+- **Workspace** — prompts, secrets, tools, config, and sync in one place.
 
-## Installation
+## Architecture
 
-### Firefox Mobile
-1. Download the `.xpi` file from the release
-2. Open Firefox Mobile
-3. Navigate to `about:addons`
-4. Tap the gear icon → "Install Add-on From File"
-5. Select the downloaded `.xpi` file
+- **Extension** — Manifest V3 (Chrome/Chromium + Firefox). Background service worker + content scripts.
+- **Adapters** — per-site plugins that insert text, submit, read responses, and attach files. Robust selectors + DOM-walking fallbacks for UIs that mutate at runtime.
+- **Cross-tab execution** — a browser model in any swarm slot is driven via `chrome.tabs` + `chrome.scripting`, with MV3-safe capture.
+- **MCP client** — connects to `mcpnyx` (free) or `mcpnyx-u` (premium) for tools; any MCP server can be configured.
 
-### Other Mobile Browsers
-- Kiwi Browser (Android): Supports Chrome extensions
-- Edge Canary: Supports some extensions
-- Check your browser's extension documentation
+See [`docs/SWARM-ARCHITECTURE.md`](./docs/SWARM-ARCHITECTURE.md) for the swarm design.
 
-## Development
-
-### Project Structure
-```
-nyx-mobile/
-├── addons/
-│   ├── mobile-sidebar-fix.js    # Mobile touch optimizations
-│   └── ... (other addons)
-├── content/
-│   └── mobile-sidebar-override.css
-├── pages/content/src/
-│   ├── components/sidebar/
-│   │   ├── MobileSidebar.tsx    # Mobile-optimized sidebar
-│   │   └── ...
-│   └── mobile-entry.ts          # Mobile detection & loading
-└── ...
-```
-
-### Key Mobile Components
-
-#### MobileSidebar.tsx
-Mobile-optimized sidebar with:
-- Slide-in panel from the right
-- Touch gesture support (swipe to close)
-- Larger touch targets
-- Bottom navigation tabs
-- Floating action button for opening
-
-#### mobile-sidebar-fix.js
-Addon that provides:
-- Touch event optimizations
-- Mobile-specific CSS injection
-- Touch feedback animations
-- Double-tap zoom prevention
-
-#### mobile-entry.ts
-Entry point that:
-- Detects mobile devices
-- Conditionally loads mobile sidebar
-- Falls back to desktop version if needed
-
-## Building
+## Build
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Build for all browsers
-pnpm build
-
-# Build specifically for Firefox
-pnpm build:firefox
-
-# Create .zip/.xpi package
-pnpm zip
-pnpm zip:firefox
+pnpm build          # outputs to ./dist  (this is what Chrome loads)
 ```
 
-## Differences from Desktop Version
+Then load unpacked in `chrome://extensions` → select the repo's `dist/` directory.
 
-### Changed
-- Sidebar slides in from the right instead of being always visible
-- Floating action button instead of always-visible sidebar toggle
-- Bottom navigation for tabs
-- Larger touch targets throughout
-- Swipe gestures for closing
+## Development notes
 
-### Unchanged
-- All backend functionality
-- All AI platform integrations
-- Tool execution
-- Memory and context
-- Push content mode
-- Settings and preferences
+- The extension loads from **`dist/`** (root build output) — not `chrome-extension/`, not `pages/content/dist/`.
+- Content bundle is written by the root build (`pnpm build`, vite + turbo).
+- Adapters live in `pages/content/src/plugins/adapters/`; per-site input handlers in `pages/content/src/components/websites/<site>/`.
 
-## Mobile Detection
+## Credits
 
-The extension automatically detects mobile devices based on:
-- User agent string
-- Screen size (< 768px)
-- Touch support
-
-## Browser Compatibility
-
-### Fully Supported
-- Firefox Mobile (Android)
-- Firefox for iOS (limited extension support)
-
-### Partial Support
-- Kiwi Browser (Android)
-- Edge Canary (Android)
-
-### Not Supported
-- Safari (no extension support on iOS)
-- Chrome Mobile (limited extension support)
-
-## Known Issues
-
-1. Some AI platforms may have mobile-specific UI differences
-2. Push content mode may behave differently on mobile layouts
-3. Very small screens (< 320px) may cause layout issues
-4. Some browsers may not support all extension APIs
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test on mobile devices
-5. Submit a pull request
+- Built by Alsania I/O — imagined by Sigma, powered by Echo.
+- Lineage: Nyx Control → Nyx Mobile → Aegis Identity Hub.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Links
-
-- [GitHub Repository](https://github.com/alsania-dev/nyx-mobile)
-- [Documentation](https://alsania-io.com/tools/nyx-mobile)
-- [Issues](https://github.com/alsania-dev/nyx-mobile/issues)
-
----
-
-**Built with ❤️ by Alsania I/O**
+MIT — see [`LICENSE`](./LICENSE).

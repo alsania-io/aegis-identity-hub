@@ -24,20 +24,20 @@ export const DEFAULT_MODEL_PROVIDERS: Record<ModelProviderId, ModelProviderConfi
     name: 'Kilo Code',
     description: 'Specialized ultra-low-latency coding, syntax repair, EVM auditing, and reasoning engine.',
     enabled: true,
-    baseUrl: 'https://api.kilo.code/v1',
-    defaultEndpoint: 'https://api.kilo.code/v1',
+    baseUrl: 'https://api.kilo.ai/api/gateway',
+    defaultEndpoint: 'https://api.kilo.ai/api/gateway',
     apiKey: '',
     status: 'idle',
     badge: 'Code & Reasoning',
-    docsUrl: 'https://kilo.code/docs',
+    docsUrl: 'https://kilo.ai/docs',
   },
   bazaarlink: {
     id: 'bazaarlink',
     name: 'BazaarLink',
     description: 'Decentralized Web3 AI marketplace, peer-to-peer compute nodes, and sovereign agent models.',
     enabled: true,
-    baseUrl: 'https://api.bazaarlink.com/v1',
-    defaultEndpoint: 'https://api.bazaarlink.com/v1',
+    baseUrl: 'https://api.bazaarlink.ai/v1',
+    defaultEndpoint: 'https://api.bazaarlink.ai/v1',
     apiKey: '',
     status: 'idle',
     badge: 'P2P & Web3 Sovereign',
@@ -779,90 +779,44 @@ export async function fetchLiveModelsFromProvider(
   provider: ModelProviderConfig
 ): Promise<{ success: boolean; models: AiModelItem[]; error?: string }> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-    let url = provider.baseUrl;
-    if (provider.id === 'local') {
-      // Ollama tags endpoint or v1/models
-      url = provider.baseUrl.replace(/\/v1$/, '') + '/api/tags';
-    } else if (!url.endsWith('/models')) {
-      url = url.replace(/\/$/, '') + '/models';
-    }
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (provider.apiKey && provider.apiKey !== 'not-needed') {
-      headers['Authorization'] = `Bearer ${provider.apiKey}`;
-      if (provider.id === 'openrouter') {
-        headers['HTTP-Referer'] = 'https://alsania-io.com/aegis-identity-hub';
-        headers['X-Title'] = 'Aegis Identity Hub';
-      }
-    }
-
-    const res = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    }
-
-    const data = await res.json();
+    // Fetch via the background service worker (extension origin). A content
+    // script fetch is bound by the HOST PAGE's CORS/CSP and is blocked for
+    // provider APIs ('Failed to fetch'). The SW has host_permissions and is not
+    // subject to page CORS. Fall back to a direct fetch only if the runtime
+    // channel is unavailable (e.g. non-extension dev context).
     const fetchedModels: AiModelItem[] = [];
+    let transportError: string | undefined;
 
-    // Parse according to provider format
-    if (provider.id === 'local' && Array.isArray(data.models)) {
-      // Ollama /api/tags format: { models: [ { name: "llama3.2:3b", ... } ] }
-      for (const item of data.models) {
-        const rawName = item.name || item.model || '';
-        if (!rawName) continue;
-        fetchedModels.push({
-          id: `local/${rawName}`,
-          rawId: rawName,
-          name: `Local ${rawName}`,
-          providerId: 'local',
-          providerName: 'Localhost / Llama',
-          description: `Discovered from active local server (${item.details?.parameter_size || 'local'}).`,
-          contextWindow: item.details?.context_length || 32768,
-          category: rawName.includes('coder') ? 'code' : rawName.includes('r1') ? 'reasoning' : 'general',
-          pricingType: 'local',
-          isCustom: true,
-          tags: ['discovered', 'local', 'offline'],
-        });
-      }
-    } else if (Array.isArray(data.data)) {
-      // Standard OpenAI / OpenRouter format: { data: [ { id: "...", ... } ] }
-      for (const item of data.data) {
-        const rawId = item.id;
-        if (!rawId) continue;
-        fetchedModels.push({
-          id: `${provider.id}/${rawId}`,
-          rawId,
-          name: item.name || rawId,
+    const runtime: any = (globalThis as any).browser?.runtime ?? (globalThis as any).chrome?.runtime;
+    if (runtime?.sendMessage) {
+      const resp: any = await runtime.sendMessage({
+        type: 'provider:fetch-models',
+        payload: {
+          id: provider.id,
+          baseUrl: provider.baseUrl,
+          apiKey: provider.apiKey,
           providerId: provider.id,
-          providerName: provider.name,
-          description: item.description || `Live model from ${provider.name}`,
-          contextWindow: item.context_length || 128000,
-          category: rawId.includes('code') ? 'code' : rawId.includes('r1') || rawId.includes('o1') ? 'reasoning' : 'general',
-          pricingType: provider.id === 'local' ? 'local' : 'paid',
-          isCustom: true,
-          tags: ['live-discovered', provider.id],
-        });
+          name: provider.name,
+        },
+      });
+      if (resp?.success && Array.isArray(resp.models)) {
+        for (const m of resp.models) fetchedModels.push(m as AiModelItem);
+      } else if (resp?.error) {
+        transportError = resp.error;
+      } else {
+        transportError = 'empty/invalid response from background';
       }
+    } else {
+      transportError = 'No runtime.sendMessage available';
     }
 
     if (fetchedModels.length === 0) {
-      // If endpoint returned empty or non-standard, return catalog
       return {
-        success: true,
+        success: false,
         models: PROVIDER_CATALOGUES[provider.id] || [],
-        error: 'No model entries in endpoint response; auto-generated from verified catalogue.',
+        error: transportError
+          ? `Could not reach live endpoint (${transportError}). Loaded verified catalog instead.`
+          : 'No model entries in endpoint response; auto-generated from verified catalogue.',
       };
     }
 
@@ -879,6 +833,62 @@ export async function fetchLiveModelsFromProvider(
       error: `Could not reach live endpoint (${err.message || 'offline/CORS'}). Loaded verified catalog instead.`,
     };
   }
+}
+
+/**
+ * Bump this whenever the model-generation logic changes so persisted state is
+ * regenerated on load instead of hydrating a stale frozen list forever.
+ */
+export const MODELS_STATE_VERSION = 3;
+
+/**
+ * Refresh a persisted ModelsState against the CURRENT generator: rebuild the
+ * curated catalogue for enabled providers, preserving user customs and any
+ * live-fetched models. Used by storage hydration when the stored state predates
+ * MODELS_STATE_VERSION.
+ */
+export function refreshModelsState(existing: ModelsState): ModelsState {
+  const selectedProviderIds = (existing.selectedProviderIds && existing.selectedProviderIds.length > 0)
+    ? existing.selectedProviderIds
+    : getDefaultModelsState().selectedProviderIds;
+
+  // Keep user customs + live-fetched models for enabled providers.
+  const preserved = (existing.models || []).filter((m) => {
+    if (m.isCustom) return true;
+    return selectedProviderIds.includes(m.providerId);
+  });
+
+  const regenerated = generateModelsForProviders(selectedProviderIds, preserved);
+  const seen = new Set(regenerated.map((m) => m.id));
+  const models = [...regenerated, ...preserved.filter((m) => !seen.has(m.id))];
+
+  // Also refresh provider CONFIG from the current defaults so corrected
+  // baseUrls / endpoints / docs reach persisted state. Preserve user-owned
+  // fields (apiKey, enabled, status). Endpoint fields are taken from the
+  // CURRENT defaults because a stored endpoint may be a stale/wrong default
+  // (this repair); a user who intentionally set a custom endpoint can re-enter
+  // it via the provider panel.
+  const providers: Record<string, ModelProviderConfig> = { ...(existing.providers || {}) };
+  for (const id of Object.keys(DEFAULT_MODEL_PROVIDERS) as ModelProviderId[]) {
+    const def = DEFAULT_MODEL_PROVIDERS[id];
+    const prev = providers[id];
+    providers[id] = prev
+      ? {
+          ...def,
+          apiKey: prev.apiKey,
+          enabled: prev.enabled,
+          status: prev.status,
+        }
+      : def;
+  }
+
+  return {
+    ...existing,
+    providers: providers as ModelsState['providers'],
+    models,
+    modelsStateVersion: MODELS_STATE_VERSION,
+    lastGeneratedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -900,6 +910,7 @@ export function getDefaultModelsState(): ModelsState {
     models: generateModelsForProviders(selectedProviderIds),
     assignments: DEFAULT_MODEL_ASSIGNMENTS,
     autoFetchOnSelect: true,
+    modelsStateVersion: MODELS_STATE_VERSION,
     lastGeneratedAt: new Date().toISOString(),
   };
 }

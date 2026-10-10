@@ -4,7 +4,7 @@
  */
 
 import { AppState, defaultAppState, Device } from '../types/identity';
-import { getDefaultModelsState } from './model-registry';
+import { getDefaultModelsState, refreshModelsState, MODELS_STATE_VERSION } from './model-registry';
 
 const STORAGE_KEY = 'aegis_identity_hub_state';
 const DEVICE_KEY = 'aegis_device_info';
@@ -26,7 +26,15 @@ function mergeWithDefaults(parsed: Partial<AppState>): AppState {
     plugins: parsed.plugins ?? defaultAppState.plugins,
     secrets: parsed.secrets ?? defaultAppState.secrets,
     agents: parsed.agents ?? defaultAppState.agents,
-    modelsState: parsed.modelsState ?? getDefaultModelsState(),
+    modelsState: (() => {
+      const stored = parsed.modelsState;
+      if (!stored) return getDefaultModelsState();
+      // Regenerate if the stored state predates the current generator version.
+      if ((stored.modelsStateVersion ?? 0) < MODELS_STATE_VERSION) {
+        return refreshModelsState(stored);
+      }
+      return stored;
+    })(),
     settings: {
       ...defaultAppState.settings,
       ...parsed.settings

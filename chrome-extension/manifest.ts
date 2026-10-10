@@ -27,6 +27,17 @@ const manifest = {
     '*://*.gemini.google.com/*',
     '*://*.aistudio.google.com/*',
     '*://*.openrouter.ai/*',
+    // Model-list API endpoints (fetched from the background worker, not the page).
+    // Without these the live provider model fetch is blocked by page CORS.
+    '*://api.openai.com/*',
+    '*://api.anthropic.com/*',
+    '*://generativelanguage.googleapis.com/*',
+    '*://api.cohere.com/*',
+    '*://*.huggingface.co/*',
+    '*://router.huggingface.co/*',
+    '*://api.kilo.ai/*',
+    '*://api.bazaarlink.ai/*',
+    '*://api.groq.com/*',
     '*://*.google-analytics.com/*',
     '*://*.chat.deepseek.com/*',
     '*://*.t3.chat/*',

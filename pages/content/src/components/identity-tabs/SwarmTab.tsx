@@ -9,6 +9,7 @@ import { SwarmTask, SwarmConfig, AiModelItem, ModelAssignments, Prompt } from '.
 import { SearchableModelSelect } from './SearchableModelSelect';
 import { SearchablePromptSelect } from './SearchablePromptSelect';
 import { swarmService } from '../../services/swarm.service';
+import { withBrowserModels } from '../../lib/browser-models';
 
 interface SwarmTabProps {
   tasks: SwarmTask[];
@@ -80,17 +81,10 @@ export const SwarmTab: React.FC<SwarmTabProps> = ({
   const defaultCronModel =
     modelAssignments?.cronTasksDefaultModel || (models.length > 0 ? models[0].id : 'kilo/kilo-coder-pro');
 
-  // Browser-model options: route a task to a live browser tab (any site),
-  // read the reply cross-tab. These are `tab/<site>` model ids.
-  const browserModelOptions: AiModelItem[] = [
-    { id: 'tab/deepseek', name: 'DeepSeek (browser tab)', rawId: 'tab/deepseek', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
-    { id: 'tab/claude', name: 'Claude (browser tab)', rawId: 'tab/claude', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
-    { id: 'tab/chatgpt', name: 'ChatGPT (browser tab)', rawId: 'tab/chatgpt', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
-    { id: 'tab/gemini', name: 'Gemini (browser tab)', rawId: 'tab/gemini', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
-    { id: 'tab/kimi', name: 'Kimi (browser tab)', rawId: 'tab/kimi', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
-    { id: 'tab/qwen', name: 'Qwen (browser tab)', rawId: 'tab/qwen', providerName: 'BROWSER', providerId: 'browser', category: 'browser-tab' } as any,
-  ];
-  const workerModelOptions: AiModelItem[] = [...browserModelOptions, ...(models || [])];
+  // Browser-model options come from ONE shared source (lib/browser-models.ts)
+  // so the `tab/<site>` list can never drift between SwarmTab, SettingsTab and
+  // AgentsTab. withBrowserModels() prepends them to the provider models.
+  const workerModelOptions: AiModelItem[] = withBrowserModels(models || []);
 
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');

@@ -38,10 +38,8 @@ import {
   ExaAdapter,
   TavilyAdapter,
   OllamaAdapter,
+  providersCatalog,
 } from '@alsania-io/ai-router';
-
-// Import the bundled provider catalog directly
-import providersCatalog from '@alsania-io/ai-router/src/config/providers.json';
 import { ModelsState, ModelProviderConfig } from '../types/identity';
 import { createLogger } from '@extension/shared/lib/logger';
 

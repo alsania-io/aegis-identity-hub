@@ -138,9 +138,16 @@ const IdentityAppInner: React.FC<IdentityAppProps> = ({
   }, [appState.syncKey, appState.settings.syncIntervalSeconds]);
 
   const handleStateUpdate = (updates: Partial<AppState>) => {
-    const updated = { ...appState, ...updates, updatedAt: new Date().toISOString() };
-    setAppState(updated);
-    saveLocalState(updated);
+    // Use the functional form so rapid successive updates (e.g. a provider
+    // toggle immediately followed by its async model-fetch merge) merge against
+    // the LATEST state instead of a stale render-scope snapshot. The previous
+    // spread-from-`appState` form caused a lost-update race that reverted the
+    // provider's enabled flag right after the toggle.
+    setAppState(prev => {
+      const updated = { ...prev, ...updates, updatedAt: new Date().toISOString() };
+      saveLocalState(updated);
+      return updated;
+    });
 
     if (updates.prompts) {
       toast.success('Prompts Saved', `Updated ${updates.prompts.length} prompt templates`);

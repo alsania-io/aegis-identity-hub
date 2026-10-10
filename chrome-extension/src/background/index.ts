@@ -2,6 +2,7 @@ import 'webextension-polyfill';
 import { exampleThemeStorage } from '@extension/storage';
 import { RemoteConfigManager } from './remote-config-manager';
 import { handleCrossTabMessage } from './cross-tab';
+import { handleProviderModelsMessage } from './provider-models';
 
 // Debug hook (MV3-safe): run from the service-worker console:
 //   __aegisTestCrossTab('claude.ai', 'Say: HELLO')
@@ -700,6 +701,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   /* ------------------------------------------------------------------ */
   if (typeof message.type === 'string' && message.type.startsWith('cross-tab:')) {
     handleCrossTabMessage(message, sendResponse);
+    return true; // Keep channel open for async response
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Provider model discovery (run in SW: extension origin, no page CORS)*/
+  /* ------------------------------------------------------------------ */
+  if (message.type === 'provider:fetch-models') {
+    handleProviderModelsMessage(message, sendResponse);
     return true; // Keep channel open for async response
   }
 

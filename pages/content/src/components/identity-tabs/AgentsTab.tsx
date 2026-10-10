@@ -61,6 +61,7 @@ import { checkAgentIntegrity, type IntegrityReport } from '../../lib/agent-integ
 import { SearchableModelSelect } from './SearchableModelSelect';
 import { SearchablePromptSelect } from './SearchablePromptSelect';
 import { EnhanceWithAiButton } from './EnhanceWithAiButton';
+import { withBrowserModels } from '../../lib/browser-models';
 import { useToast } from './Toast';
 
 interface AgentsTabProps {
@@ -1321,7 +1322,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                   helperText="Active inference driver"
                   value={editingAgent.model || 'openrouter/anthropic/claude-3.5-sonnet'}
                   onChange={(val) => setEditingAgent({ ...editingAgent, model: val })}
-                  models={models}
+                  models={withBrowserModels(models)}
                   presets={MODEL_PRESETS}
                   placeholder="Select primary model..."
                 />
@@ -1330,7 +1331,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                   helperText="Failover if primary throttles"
                   value={editingAgent.fallbackModel || 'local/deepseek-r1:8b'}
                   onChange={(val) => setEditingAgent({ ...editingAgent, fallbackModel: val })}
-                  models={models}
+                  models={withBrowserModels(models)}
                   presets={MODEL_PRESETS}
                   placeholder="Select fallback model..."
                 />

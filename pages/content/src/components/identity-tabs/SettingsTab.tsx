@@ -52,6 +52,7 @@ import {
   fetchLiveModelsFromProvider,
 } from '../../lib/model-registry';
 import { SearchableModelSelect } from './SearchableModelSelect';
+import { withBrowserModels } from '../../lib/browser-models';
 import { SecretsTab } from './SecretsTab';
 import { useToast } from './Toast';
 
@@ -103,8 +104,8 @@ const PROVIDER_METADATA: Record<
     icon: '⚡',
     requiresApiKey: true,
     keyPlaceholder: 'kilo-...',
-    docsUrl: 'https://kilo.code/docs',
-    keyConsoleUrl: 'https://kilo.code/account/api-keys',
+    docsUrl: 'https://kilo.ai/docs',
+    keyConsoleUrl: 'https://kilo.ai/account/api-keys',
     category: 'Specialized',
     description: 'Ultra-low-latency coding engine with Kilo Coder Pro, syntax repair, and fast EVM reasoning.',
   },
@@ -113,8 +114,8 @@ const PROVIDER_METADATA: Record<
     icon: '🔗',
     requiresApiKey: true,
     keyPlaceholder: 'bazaar-...',
-    docsUrl: 'https://bazaarlink.com/docs',
-    keyConsoleUrl: 'https://bazaarlink.com/dashboard/api-keys',
+    docsUrl: 'https://bazaarlink.ai/docs',
+    keyConsoleUrl: 'https://bazaarlink.ai/dashboard/api-keys',
     category: 'Web3 & P2P',
     description: 'Decentralized P2P compute network and multi-agent coordination models.',
   },
@@ -248,11 +249,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   }, [initialModelsState]);
 
-  // Save models state helper
-  const commitModelsState = (newState: ModelsState) => {
-    setModelsState(newState);
+  React.useEffect(() => {
+    console.log('[SettingsTab] render modelsState.models.length =', (modelsState.models||[]).length);
+  }, [modelsState]);
+
+  // Save models state helper. `modelsState` is kept in sync with the parent
+  // prop by the effect above, so a plain read here is current. Functional
+  // callers get that current value as `prev`. Both setters are called as plain
+  // side effects (NOT inside a setState updater, which must stay pure).
+  const commitModelsState = (next: ModelsState | ((prev: ModelsState) => ModelsState)) => {
+    const resolved = typeof next === 'function' ? (next as (p: ModelsState) => ModelsState)(modelsState) : next;
+    setModelsState(resolved);
     if (onUpdateModelsState) {
-      onUpdateModelsState(newState);
+      onUpdateModelsState(resolved);
     }
   };
 
@@ -274,10 +283,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       (id) => newProviders[id as ModelProviderId]?.enabled
     ) as ModelProviderId[];
 
-    // Retain custom models that user manually added
-    const customModels = (modelsState.models || []).filter((m) => m.isCustom);
-    const regeneratedModels = generateModelsForProviders(newSelectedProviderIds);
-    const combinedModels = [...regeneratedModels, ...customModels];
+    // Retain (a) user customs and (b) any already-known models (incl. live-fetched)
+    // that still belong to a currently-enabled provider. Then layer the curated
+    // catalogue on top so enabling a provider never silently drops its models.
+    const knownModels = (modelsState.models || []).filter((m) => {
+      if (m.isCustom) return true; // user customs always kept
+      return newSelectedProviderIds.includes(m.providerId);
+    });
+    const regeneratedModels = generateModelsForProviders(newSelectedProviderIds, knownModels);
+    const seenIds = new Set(regeneratedModels.map((m) => m.id));
+    const combinedModels = [
+      ...regeneratedModels,
+      ...knownModels.filter((m) => !seenIds.has(m.id)),
+    ];
 
     // Check if role assignments need graceful fallback
     const availableModelIds = new Set(combinedModels.map((m) => m.id));
@@ -303,24 +321,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         : firstAvailable,
     };
 
-    const updatedState: ModelsState = {
-      ...modelsState,
-      providers: newProviders,
+    // Functional commit: apply onto the latest state so an in-flight live fetch
+    // from a previous action cannot clobber this toggle.
+    commitModelsState(prev => ({
+      ...prev,
+      providers: { ...prev.providers, [providerId]: updatedProvider },
       selectedProviderIds: newSelectedProviderIds,
       models: combinedModels,
       assignments: updatedAssignments,
       lastGeneratedAt: new Date().toISOString(),
-    };
-
-    commitModelsState(updatedState);
+    }));
 
     const providerName = PROVIDER_METADATA[providerId]?.name || providerId;
     if (enabled) {
       const addedCount = (PROVIDER_CATALOGUES[providerId] || []).length;
       toast.success(
         `${providerName} Enabled`,
-        `Unlocked ${addedCount} models. Now available for all agents and swarm tasks.`
+        `Unlocked ${addedCount} curated models. Use "Test Connection" to fetch the live list.`
       );
+      // NOTE: deliberately NO implicit live-fetch here. Enabling must be a pure,
+      // synchronous state change so it can never be clobbered by a late async
+      // write. Live discovery is the explicit "Test Connection" action.
     } else {
       toast.info(`${providerName} Disabled`, 'Models from this provider have been removed from active selection.');
     }
@@ -368,10 +389,34 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
     try {
       const result = await fetchLiveModelsFromProvider(provider);
+
+      // Merge the fetched models (live OR curated fallback) into state so they
+      // actually appear in every model dropdown. Uses the FUNCTIONAL form so it
+      // merges onto the LATEST state — a plain `{...modelsState}` here would
+      // spread a stale snapshot and revert a just-enabled provider to disabled.
+      if (result.models && result.models.length > 0) {
+        const fetchedIds = new Set(result.models.map((m) => m.id));
+        commitModelsState(prev => {
+          // Drop stale live entries for THIS provider (keep user customs) then add fresh.
+          const kept = (prev.models || []).filter(
+            (m) => m.providerId !== providerId || (!m.isCustom && !fetchedIds.has(m.id))
+          );
+          const merged = [
+            ...result.models,
+            ...kept.filter((m) => !fetchedIds.has(m.id)),
+          ];
+          return {
+            ...prev,
+            models: merged,
+            lastGeneratedAt: new Date().toISOString(),
+          };
+        });
+      }
+
       if (result.success) {
         toast.success(
           'Connection Successful',
-          `Connected to ${provider.name}. Verified ${result.models.length} active models.`
+          `Connected to ${provider.name}. Loaded ${result.models.length} models into your catalogue.`
         );
       } else {
         toast.warning(
@@ -466,6 +511,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const activeProvidersCount = useMemo(() => {
     return Object.values(modelsState.providers).filter((p) => p.enabled).length;
   }, [modelsState.providers]);
+
+  // Role-assignment dropdown list: provider models PLUS browser-tab (`tab/<site>`)
+  // models, from the shared source so the option set matches SwarmTab/AgentsTab.
+  const roleModelOptions = useMemo(
+    () => withBrowserModels(modelsState.models || []),
+    [modelsState.models]
+  );
+
+  // Live models for the provider currently selected in the provider panel.
+  // Prefers the models actually in state (curated + live-fetched); falls back to
+  // the static curated catalogue only when state has none for this provider.
+  const selectedProviderModels = useMemo(() => {
+    const live = (modelsState.models || []).filter((m) => m.providerId === selectedProviderId);
+    return live.length > 0 ? live : (PROVIDER_CATALOGUES[selectedProviderId] || []);
+  }, [modelsState.models, selectedProviderId]);
 
   // Theme presets
   const themes: Array<{ value: 'system' | 'dark' | 'light' | 'glass'; icon: React.ReactNode; label: string }> = [
@@ -887,7 +947,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     <Cpu className="w-3.5 h-3.5 text-[#10b981]" /> Models Provided by {selectedMeta.name}
                   </h4>
                   <span className="text-[10px] text-slate-500 font-mono">
-                    {(PROVIDER_CATALOGUES[selectedProviderId] || []).length} models in catalogue
+                    {selectedProviderModels.length} models in catalogue
                   </span>
                 </div>
 
@@ -897,7 +957,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 </p>
 
                 <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                  {(PROVIDER_CATALOGUES[selectedProviderId] || []).map((model) => (
+                  {selectedProviderModels.map((model) => (
                     <div
                       key={model.id}
                       className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800/80 text-xs"
@@ -962,7 +1022,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <SearchableModelSelect
                 value={modelsState.assignments.defaultModel}
                 onChange={(val) => handleAssignmentChange('defaultModel', val)}
-                models={modelsState.models || []}
+                models={roleModelOptions}
                 placeholder="Search and select default system model..."
               />
             </div>
@@ -978,7 +1038,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <SearchableModelSelect
                 value={modelsState.assignments.swarmOrchestratorModel}
                 onChange={(val) => handleAssignmentChange('swarmOrchestratorModel', val)}
-                models={modelsState.models || []}
+                models={roleModelOptions}
                 placeholder="Search and select orchestrator model..."
               />
             </div>
@@ -994,7 +1054,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <SearchableModelSelect
                 value={modelsState.assignments.swarmWorkerModel}
                 onChange={(val) => handleAssignmentChange('swarmWorkerModel', val)}
-                models={modelsState.models || []}
+                models={roleModelOptions}
                 placeholder="Search and select worker model..."
               />
             </div>
@@ -1010,7 +1070,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <SearchableModelSelect
                 value={modelsState.assignments.cronTasksDefaultModel}
                 onChange={(val) => handleAssignmentChange('cronTasksDefaultModel', val)}
-                models={modelsState.models || []}
+                models={roleModelOptions}
                 placeholder="Search and select cron task model..."
               />
             </div>
@@ -1026,7 +1086,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <SearchableModelSelect
                 value={modelsState.assignments.agentDefaultModel}
                 onChange={(val) => handleAssignmentChange('agentDefaultModel', val)}
-                models={modelsState.models || []}
+                models={roleModelOptions}
                 placeholder="Search and select custom agent default..."
               />
             </div>
@@ -1042,7 +1102,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <SearchableModelSelect
                 value={modelsState.assignments.agentFallbackModel}
                 onChange={(val) => handleAssignmentChange('agentFallbackModel', val)}
-                models={modelsState.models || []}
+                models={roleModelOptions}
                 placeholder="Search and select custom agent fallback..."
               />
             </div>

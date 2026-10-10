@@ -796,6 +796,9 @@ export interface ModelsState {
   models: AiModelItem[];
   assignments: ModelAssignments;
   autoFetchOnSelect: boolean;
+  /** Generator version — bumped when model-generation logic changes so persisted
+   *  state is regenerated on load rather than hydrating a stale list forever. */
+  modelsStateVersion?: number;
   lastGeneratedAt?: string;
 }
 

@@ -21,9 +21,13 @@ const SITE_SEL: Record<string, { input: string; send: string; reply: string }> =
     reply: '.ds-assistant-message-main-content',
   },
   'claude.ai': {
-    input: 'div[contenteditable="true"]',
+    input: 'div[contenteditable="true"][data-testid="composer-input"], div[contenteditable="true"]',
     send: 'button[aria-label*="Send" i], button[type="submit"]',
-    reply: '[data-testid="assistant-message"], .font-claude-message',
+    // Fallback list (architecture §4): Claude's DOM churns; try known variants
+    // newest-first. The first match wins in q(). UNVERIFIED against a live tab —
+    // if capture returns empty, inspect a logged-in claude.ai and prepend the
+    // working selector here. Kept as a LIST so one rename doesn't break capture.
+    reply: '.font-claude-message, [data-testid="assistant-message"], div[data-is-streaming], [class*="font-claude-message"], [class*="assistant"][class*="message"], .prose',
   },
   'chatgpt.com': {
     input: 'div[contenteditable="true"], textarea',
@@ -91,7 +95,7 @@ async function startOp(
         'claude.ai': {
           input: 'div[contenteditable="true"][data-testid="composer-input"], div[contenteditable="true"]',
           send: 'button[aria-label*="Send" i], button[type="submit"], button:has(svg[viewBox="0 0 16 16"])',
-          reply: '[data-testid="assistant-message"], .font-claude-message',
+          reply: '.font-claude-message, [data-testid="assistant-message"], div[data-is-streaming], [class*="font-claude-message"], [class*="assistant"][class*="message"], .prose',
         },
         'chatgpt.com': {
           input: 'div[contenteditable="true"], textarea',
@@ -159,13 +163,20 @@ async function pollOp(
       const HOST = location.hostname;
       const REPLY: Record<string, string> = {
         'chat.deepseek.com': '.ds-assistant-message-main-content',
-        'claude.ai': '[data-testid="assistant-message"], .font-claude-message',
+        'claude.ai': '.font-claude-message, [data-testid="assistant-message"], div[data-is-streaming], [class*="font-claude-message"], [class*="assistant"][class*="message"], .prose',
         'chatgpt.com': '[data-message-author-role="assistant"]',
         default: '[class*="assistant"], [class*="message"]',
       };
       const sel = Object.entries(REPLY).find(([k]) => HOST.includes(k))?.[1] ?? REPLY.default;
-      const nodes = document.querySelectorAll(sel);
-      if (nodes.length <= base) return { success: true, text: '', done: false };
+      // Resolve the FIRST matching selector in the fallback list, then take its
+      // LAST node — a merged comma-list querySelectorAll can interleave ordering
+      // across unrelated classes and return the wrong "newest" reply.
+      let nodes: NodeListOf<Element> | null = null;
+      for (const part of sel.split(',')) {
+        const found = document.querySelectorAll(part.trim());
+        if (found.length > 0) { nodes = found; break; }
+      }
+      if (!nodes || nodes.length <= base) return { success: true, text: '', done: false };
       const t = ((nodes[nodes.length - 1] as HTMLElement).innerText || '').trim();
       return { success: true, text: t, done: false };
     },

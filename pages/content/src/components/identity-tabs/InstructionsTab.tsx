@@ -3,6 +3,7 @@ import { FileCode, Save, Sparkles, RefreshCw } from 'lucide-react';
 import { generateInstructions } from '../sidebar/Instructions/instructionGenerator';
 import { EnhanceWithAiButton } from './EnhanceWithAiButton';
 import { SearchablePromptSelect } from './SearchablePromptSelect';
+import { escapeTextToHtmlWithBreaks } from '@extension/shared/lib/sanitizer';
 
 interface InstructionsTabProps {
   customInstructions: string;
@@ -163,7 +164,7 @@ You can also add:
                 <RefreshCw className="w-6 h-6 animate-spin mr-2" /> Generating...
               </div>
             ) : generatedPrompt ? (
-              <div dangerouslySetInnerHTML={{ __html: generatedPrompt.replace(/\n/g, '<br />') }} />
+              <div dangerouslySetInnerHTML={{ __html: escapeTextToHtmlWithBreaks(generatedPrompt) }} />
             ) : (
               <div className="text-slate-500">
                 No system prompt generated. Make sure tools are loaded.

@@ -51,9 +51,42 @@ import { createTabLeaseStore, pickUnleasedTab, TAB_LEASE_KINDS } from "@extensio
 const SW_GENERATION = Date.now();
 const tabLeases = createTabLeaseStore({ generation: 1 });
 
+// Console-accessible test seam (module exports aren't visible to a SW devtools
+// console; the bundle is an ES module). Mirrors the __aegisTestCrossTab pattern.
+(globalThis as any).__tabLeases = tabLeases;
 export function __tabLeasesForTests() {
   return tabLeases;
 }
+
+// §6.4 live proof: two runs claim a tab for the same host; assert they get
+// DIFFERENT tabs. Runs entirely in the SW (no sendMessage self-round-trip).
+(globalThis as any).__aegisTestTabLease2Runs = async (host = "claude.ai") => {
+  const call = (m: any) => new Promise<any>((res) => handleCrossTabMessage(m, res));
+  const out: any = { host, before: tabLeases.leasedTabIds() };
+  try {
+    console.log("TL2RUN step1: start run-A");
+    const a = await call({ type: "cross-tab:start", host, prompt: "Say: A", ownerId: "run-A", taskSetId: "ts-A" });
+    out.runA = a?.tabId; out.startA = { ok: a?.success, err: a?.error };
+    out.afterA = tabLeases.leasedTabIds();
+    console.log("TL2RUN step2: A ->", JSON.stringify(out.startA), "leases", JSON.stringify(out.afterA));
+
+    console.log("TL2RUN step3: start run-B");
+    const b = await call({ type: "cross-tab:start", host, prompt: "Say: B", ownerId: "run-B", taskSetId: "ts-B" });
+    out.runB = b?.tabId; out.startB = { ok: b?.success, err: b?.error };
+    out.afterB = tabLeases.leasedTabIds();
+    console.log("TL2RUN step4: B ->", JSON.stringify(out.startB), "leases", JSON.stringify(out.afterB));
+
+    out.DIFFERENT_TABS = out.runA != null && out.runB != null && out.runA !== out.runB;
+
+    await call({ type: "cross-tab:release-task-set", taskSetId: "ts-A", ownerId: "run-A" });
+    await call({ type: "cross-tab:release-task-set", taskSetId: "ts-B", ownerId: "run-B" });
+    out.afterRelease = tabLeases.leasedTabIds();
+  } catch (e: any) {
+    out.error = e?.message ?? String(e);
+  }
+  console.log("TAB-LEASE 2-RUN TEST:", JSON.stringify(out));
+  return out;
+};
 
 function urlForHost(host: string): string {
   const h = host.replace(/^\*\.\/?/, '');

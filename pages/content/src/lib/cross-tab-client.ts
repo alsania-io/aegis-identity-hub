@@ -34,18 +34,21 @@ async function send(msg: any): Promise<any> {
 export async function executeInTab(
   host: string,
   prompt: string,
-  opts: { tabId?: number; createIfMissing?: boolean; timeoutMs?: number } = {},
+  opts: { tabId?: number; createIfMissing?: boolean; timeoutMs?: number; ownerId?: string; taskSetId?: string } = {},
 ): Promise<CrossTabResult> {
   const timeoutMs = opts.timeoutMs ?? 120000;
   const pollMs = 700;
 
-  // 1) START (short worker op)
+  // 1) START (short worker op). ownerId/taskSetId claim a tab lease so two
+  // swarm runs never share one chat tab (Architecture §6.4).
   const started = await send({
     type: 'cross-tab:start',
     host,
     prompt,
     tabId: opts.tabId,
     createIfMissing: opts.createIfMissing ?? true,
+    ownerId: opts.ownerId,
+    taskSetId: opts.taskSetId,
   });
   if (!started?.success) {
     return { success: false, error: started?.error ?? 'start failed', tabId: started?.tabId };
@@ -74,6 +77,18 @@ export async function executeInTab(
   return last
     ? { success: true, text: last, target: host, tabId }
     : { success: false, error: 'no reply captured (timeout)', target: host, tabId };
+}
+
+/** Release a tab lease held by `ownerId` (called when a swarm run finishes). */
+export async function releaseTab(tabId: number, ownerId: string): Promise<boolean> {
+  const r = await send({ type: 'cross-tab:release', tabId, ownerId });
+  return !r ? false : !!r.success;
+}
+
+/** Release every tab leased to a task-set (a whole swarm run finished). */
+export async function releaseTaskSet(taskSetId: string, ownerId: string): Promise<number> {
+  const r = await send({ type: 'cross-tab:release-task-set', taskSetId, ownerId });
+  return r?.released ?? 0;
 }
 
 /** Map a tab/<site> model id to a host string. */

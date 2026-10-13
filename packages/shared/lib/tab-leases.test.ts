@@ -126,3 +126,32 @@ test("lease-limit is enforced", () => {
   assert.equal(over.ok, false);
   assert.equal((over as any).error, "lease-limit");
 });
+import { pickUnleasedTab } from "./tab-leases.ts";
+
+test("pickUnleasedTab returns the first UNLEASED candidate (§6.4)", () => {
+  const { s } = store();
+  s.acquire({ tabId: 10, kind: TAB_LEASE_KINDS.THIS_TAB, ownerId: "run-A" });
+  // Candidate order [10, 11, 12]: 10 is leased, so 11 wins.
+  assert.equal(pickUnleasedTab(s, [10, 11, 12]), 11);
+  // All leased -> null (caller must create a fresh tab).
+  s.acquire({ tabId: 11, kind: TAB_LEASE_KINDS.THIS_TAB, ownerId: "run-A" });
+  assert.equal(pickUnleasedTab(s, [10, 11]), null);
+  // Ignores null/undefined ids.
+  assert.equal(pickUnleasedTab(s, [null, undefined, 12]), 12);
+  // Empty list -> null.
+  assert.equal(pickUnleasedTab(s, []), null);
+});
+
+test("two runs get DIFFERENT tabs for the same host (§6.4 regression)", () => {
+  const { s } = store();
+  // Host has two tabs open: 100 and 200.
+  const runATab = pickUnleasedTab(s, [100, 200]);
+  assert.equal(runATab, 100);
+  s.acquire({ tabId: runATab!, kind: TAB_LEASE_KINDS.THIS_TAB, ownerId: "run-A" });
+  // Run B must NOT get 100 again; it gets the other tab.
+  const runBTab = pickUnleasedTab(s, [100, 200]);
+  assert.equal(runBTab, 200);
+  s.acquire({ tabId: runBTab!, kind: TAB_LEASE_KINDS.THIS_TAB, ownerId: "run-B" });
+  // A third run finds none -> must create a fresh tab (null here).
+  assert.equal(pickUnleasedTab(s, [100, 200]), null);
+});

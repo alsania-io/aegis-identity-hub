@@ -41,6 +41,20 @@ const SITE_SEL: Record<string, { input: string; send: string; reply: string }> =
   },
 };
 
+// Phase 5 (Architecture §6.4): tab leases so two swarm runs cannot both drive
+// the SAME chat tab and interleave their subtasks. A tab is leased to ONE owner
+// (a swarm run / task-set) for the run's duration; findTab skips leased tabs so
+// a second run gets its OWN tab. A new service-worker generation invalidates
+// stale leases (they cannot resurrect after a restart).
+import { createTabLeaseStore, pickUnleasedTab, TAB_LEASE_KINDS } from "@extension/shared/lib/tab-leases";
+
+const SW_GENERATION = Date.now();
+const tabLeases = createTabLeaseStore({ generation: 1 });
+
+export function __tabLeasesForTests() {
+  return tabLeases;
+}
+
 function urlForHost(host: string): string {
   const h = host.replace(/^\*\.\/?/, '');
   if (h.includes('deepseek')) return 'https://chat.deepseek.com/';
@@ -57,23 +71,39 @@ function urlForHost(host: string): string {
 async function findTab(host: string): Promise<number | null> {
   const h = host.replace(/^\*\.\/?/, '').replace(/\/$/, '');
   const tabs = await chrome.tabs.query({});
-  const match = tabs.find((t) => t.url && t.url.includes(h));
-  return match?.id ?? null;
+  // §6.4: skip tabs already leased so two runs never share a conversation.
+  // (A tab leased to THIS owner is reused by resolveTab, which checks first.)
+  const candidates = tabs.filter((t) => t.url && t.url.includes(h)).map((t) => t.id);
+  return pickUnleasedTab(tabLeases, candidates);
 }
 
-/** Resolve (or create) the target tab. Returns tabId. */
+/** Resolve (or create) the target tab and LEASE it to `ownerId`. Returns tabId. */
 async function resolveTab(
   host: string,
   tabId: number | undefined,
   createIfMissing: boolean,
+  ownerId: string,
+  taskSetId?: string | null,
 ): Promise<{ tabId?: number; created?: boolean; error?: string }> {
-  if (tabId != null) return { tabId };
-  const found = await findTab(host);
-  if (found != null) return { tabId: found };
-  if (!createIfMissing) return { error: `no tab found for ${host}` };
-  const tab = await chrome.tabs.create({ url: urlForHost(host), active: false });
-  if (tab.id == null) return { error: 'failed to create tab' };
-  return { tabId: tab.id, created: true };
+  const kind = taskSetId ? TAB_LEASE_KINDS.TASK_SET : TAB_LEASE_KINDS.THIS_TAB;
+  let resolved: number | null = tabId != null ? tabId : await findTab(host);
+  let created = false;
+  if (resolved == null) {
+    if (!createIfMissing) return { error: `no tab found for ${host}` };
+    const tab = await chrome.tabs.create({ url: urlForHost(host), active: false });
+    if (tab.id == null) return { error: 'failed to create tab' };
+    resolved = tab.id;
+    created = true;
+  }
+  // Acquire (or refresh) the lease. already-leased by the SAME owner is fine.
+  const existing = tabLeases.leaseForTab(resolved);
+  if (!existing) {
+    const acq = tabLeases.acquire({ tabId: resolved, kind, ownerId, taskSetId: taskSetId ?? null });
+    if (!acq.ok && acq.error !== 'already-leased') return { error: `lease failed: ${acq.error}` };
+  } else if (existing.ownerId !== ownerId) {
+    return { error: `tab ${resolved} is leased to another run` };
+  }
+  return { tabId: resolved, created };
 }
 
 /** START: inject prompt + submit. Short op. Returns baseline reply count. */
@@ -191,8 +221,13 @@ export async function handleCrossTabMessage(message: any, sendResponse: (r: any)
     const tabIdIn: number | undefined = message.tabId;
     const createIfMissing: boolean = message.createIfMissing ?? true;
 
+    // Owner identity for the lease. Defaults to a per-host owner so legacy
+    // callers still serialize per host; swarm passes a run id + taskSetId.
+    const ownerId: string = String(message.ownerId || `host:${host}`);
+    const taskSetId: string | null = message.taskSetId ? String(message.taskSetId) : null;
+
     if (message.type === 'cross-tab:start') {
-      const { tabId, created, error } = await resolveTab(host, tabIdIn, createIfMissing);
+      const { tabId, created, error } = await resolveTab(host, tabIdIn, createIfMissing, ownerId, taskSetId);
       if (error || tabId == null) return sendResponse({ success: false, error });
       if (created) await new Promise((r) => setTimeout(r, 4000)); // let it load
       const res = await startOp(tabId, message.prompt ?? '');
@@ -204,9 +239,23 @@ export async function handleCrossTabMessage(message: any, sendResponse: (r: any)
       return sendResponse(res);
     }
 
+    // Release a lease (owner-only). Called when a swarm run finishes.
+    if (message.type === 'cross-tab:release') {
+      const r = tabLeases.release({ tabId: Number(message.tabId), ownerId });
+      return sendResponse({ success: r.ok, error: r.ok ? undefined : r.error });
+    }
+
+    // Release every tab leased to a task-set (a whole swarm run finished).
+    if (message.type === 'cross-tab:release-task-set') {
+      const ids = tabLeases.taskSetTabIds(String(message.taskSetId || ''));
+      let released = 0;
+      for (const id of ids) if (tabLeases.release({ tabId: id, ownerId }).ok) released += 1;
+      return sendResponse({ success: true, released });
+    }
+
     // Backwards-compat: single-shot execute (best-effort, may hit MV3 sleep).
     if (message.type === 'cross-tab:execute') {
-      const { tabId, created, error } = await resolveTab(host, tabIdIn, createIfMissing);
+      const { tabId, created, error } = await resolveTab(host, tabIdIn, createIfMissing, ownerId, taskSetId);
       if (error || tabId == null) return sendResponse({ success: false, error });
       if (created) await new Promise((r) => setTimeout(r, 4000));
       const s = await startOp(tabId, message.prompt ?? '');

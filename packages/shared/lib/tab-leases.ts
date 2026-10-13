@@ -266,3 +266,17 @@ export function createTabLeaseStore(opts: TabLeaseStoreOptions = {}) {
 }
 
 export type TabLeaseStore = ReturnType<typeof createTabLeaseStore>;
+
+/**
+ * §6.4 helper: pick the first tab that is NOT currently leased. Given a list of
+ * candidate tab ids (in preference order), returns the first unleased one, or
+ * null if all are leased. Pure; takes the store so it composes with a real one
+ * and is trivially testable.
+ */
+export function pickUnleasedTab(store: TabLeaseStore, candidateTabIds: Array<number | null | undefined>): number | null {
+  for (const id of candidateTabIds) {
+    if (id == null) continue;
+    if (!store.leaseForTab(id)) return id;
+  }
+  return null;
+}

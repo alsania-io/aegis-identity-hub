@@ -11,6 +11,7 @@
 
 import { mcpClient } from '../core/mcp-client';
 import { routeAndDispatch } from '../lib/model-dispatcher';
+import { releaseTaskSet } from '../lib/cross-tab-client';
 
 export interface SubTask {
   id: string;
@@ -188,6 +189,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function runSubtask(
   subtask: SubTask,
   onProgress: (ev: SwarmProgressEvent) => void,
+  lease?: { ownerId: string; taskSetId: string },
 ): Promise<SubTaskResult> {
   const start = Date.now();
   onProgress({
@@ -206,6 +208,8 @@ async function runSubtask(
         systemPrompt: `You are a specialized ${subtask.taskType} agent. Be precise, concise, high quality.`,
         targetRoute: 'auto',
         modelId: subtask.model,
+        ownerId: lease?.ownerId,
+        taskSetId: lease?.taskSetId,
       } as any);
       if (!call.success) throw new Error(call.error || 'dispatch failed');
       const output = call.output;
@@ -333,6 +337,11 @@ export class SwarmService {
       throw new Error('MCP client not connected — cannot run swarm. Connect an MCP server first.');
     }
 
+    // §6.4: each run owns its tabs via a lease keyed by a unique task-set id, so
+    // two concurrent runs never drive the same chat tab. Released in `finally`.
+    const taskSetId = `swarm-${startTime}-${Math.random().toString(36).slice(2, 8)}`;
+    const lease = { ownerId: taskSetId, taskSetId };
+
     // 1) Decompose
     onProgress({ phase: 'decompose', message: 'Decomposing task…' });
     const subtasks = decompose(goal, context, workerModel);
@@ -354,7 +363,7 @@ export class SwarmService {
       // and corrupt the responses. One subtask -> one prompt -> one reply.
       const phaseResults: SubTaskResult[] = [];
       for (const s of phase) {
-        phaseResults.push(await runSubtask(s, onProgress));
+        phaseResults.push(await runSubtask(s, onProgress, lease));
       }
       allResults.push(...phaseResults);
 
@@ -384,6 +393,13 @@ export class SwarmService {
         modelsUsed: [...new Set(allResults.map((r) => r.model))],
       },
     };
+
+    // §6.4: release every tab this run leased. Best-effort — a failure to reach
+    // the worker must not fail an otherwise-successful run (leases also expire
+    // by TTL, so the worst case self-heals).
+    try {
+      await releaseTaskSet(taskSetId, taskSetId);
+    } catch { /* non-fatal */ }
 
     this.history.set(goal + startTime, result);
     onProgress({ phase: 'done', message: 'Complete', result });

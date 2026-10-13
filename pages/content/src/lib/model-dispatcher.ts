@@ -48,6 +48,10 @@ export interface ModelDispatchRequest {
   autoSubmitTab?: boolean; // Default true when tab is chosen
   /** timeout for cross-tab reply capture (ms), default 120000 */
   timeoutMs?: number;
+  /** §6.4 tab-lease owner (a swarm run id); tab route leases the tab to it. */
+  ownerId?: string;
+  /** §6.4 task-set id — groups several worker tabs under one run. */
+  taskSetId?: string;
 }
 
 export interface ModelDispatchResponse {
@@ -777,7 +781,11 @@ export async function routeAndDispatch(
   // keystone: browser models as any slot, and correct cross-tab capture.
   const namedHost = hostFromTabModel(modelId);
   if (namedHost) {
-    const xt = await executeInTab(namedHost, request.prompt, { timeoutMs: request.timeoutMs });
+    const xt = await executeInTab(namedHost, request.prompt, {
+      timeoutMs: request.timeoutMs,
+      ownerId: request.ownerId,
+      taskSetId: request.taskSetId,
+    });
     if (xt.success) {
       return finish(true, 'tab', namedHost, xt.text ?? '');
     }
